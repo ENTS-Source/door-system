@@ -1,8 +1,9 @@
 #include <Arduino.h>
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
-#include <Wiegand.h>      // https://github.com/monkeyboard/Wiegand-Protocol-Library-for-Arduino
 #include <TelnetStream.h> // https://github.com/JAndrassy/TelnetStream
+
+#include "RobustWiegand.h"
 
 // ESP8266 (NodeMCU 12E)
 
@@ -38,15 +39,15 @@
 
 WiFiManager wifiManager;
 unsigned long closeDoorMs = 0;
-WIEGAND wg;
+RobustWiegand reader(PIN_D0, PIN_D1);
 
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_RELAY, OUTPUT);
   pinMode(PIN_OPEN_BTN, INPUT);
   pinMode(PIN_WIFI_LED, OUTPUT);
-  pinMode(PIN_D0, INPUT_PULLUP);
-  pinMode(PIN_D1, INPUT_PULLUP);
+  // pinMode(PIN_D0, INPUT_PULLUP);
+  // pinMode(PIN_D1, INPUT_PULLUP);
   pinMode(PIN_OPEN_LED, OUTPUT);
 
   digitalWrite(PIN_RELAY, RELAY_CLOSE);
@@ -71,12 +72,37 @@ void setup() {
   setupOTA();
 
   TelnetStream.begin();
-  wg.begin(PIN_D0, PIN_D1);
+
+  RobustWiegand::Config config;
+  config.minBitSpacingUs = 1200; // ideally 2ms apart, so cut off 400ms frames
+  config.frameGapUs = 20000; // 20ms
+  config.useInternalPullups = true;
+  config.minFrameBits = 22;
+  config.maxFrameBits = 34;
+  if (!reader.begin(config)) {
+    Serial.println("Failed to initialize Wiegand reader");
+  }
 }
 
 void loop() {
   ArduinoOTA.handle();
   tryOpenOrClose();
+  reader.service();
+
+  RobustWiegand::Frame frame;
+  while (reader.read(frame)) {
+    uint32_t cardValue = (frame.value >> 1) & 0xFFFFFF;
+    TelnetStream.printf(
+      "Wiegand: bits=%u value=%llu fob=%lu rejected=%u overflow=%s",
+      frame.bits,
+      frame.value,
+      cardValue,
+      frame.rejectedEdges,
+      frame.overflow ? "yes" : "no"
+    );
+    TelnetStream.println();
+  }
+  TelnetStream.flush();
 
   switch (TelnetStream.read()) {
     case 'R':
@@ -84,16 +110,6 @@ void loop() {
       delay(100);
       ESP.reset();
       break;
-  }
-
-  if (wg.available()) {
-    TelnetStream.print("Wiegand HEX = ");
-    TelnetStream.print(wg.getCode(), HEX);
-    TelnetStream.print(", DECIMAL = ");
-    TelnetStream.print(wg.getCode());
-    TelnetStream.print(", Type W");
-    TelnetStream.println(wg.getWiegandType());
-    TelnetStream.flush();
   }
 }
 
