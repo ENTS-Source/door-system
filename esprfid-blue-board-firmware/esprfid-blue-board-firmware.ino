@@ -269,24 +269,6 @@ void openDoor(unsigned long forTime) {
   digitalWrite(PIN_OPEN_LED, OPEN_LED_ON);
 }
 
-bool doingUpdate = false;
-unsigned long otaSwapStateMs = 50;
-bool otaLedOn = false;
-void sparkleOTA() {
-  if (!doingUpdate) {
-    return;
-  }
-  if (millis() >= otaSwapStateMs) {
-    if (otaLedOn) {
-      digitalWrite(PIN_WIFI_LED, WIFI_LED_OFF);
-    } else {
-      digitalWrite(PIN_WIFI_LED, WIFI_LED_ON);
-    }
-    otaLedOn = !otaLedOn;
-    otaSwapStateMs = millis() + 50;
-  }
-}
-
 bool hasMagic() {
   byte magic1 = EEPROM.read(EEPROM_PASSWORD_ADDR);
   byte magic2 = EEPROM.read(EEPROM_PASSWORD_ADDR+1);
@@ -383,6 +365,24 @@ String readPassword() {
   Serial.print("Using stored password: ");
   Serial.println(password);
   return password;
+}
+
+bool doingUpdate = false;
+unsigned long otaSwapStateMs = 50;
+bool otaLedOn = false;
+void sparkleOTA() {
+  if (!doingUpdate) {
+    return;
+  }
+  if (millis() >= otaSwapStateMs) {
+    if (otaLedOn) {
+      digitalWrite(PIN_WIFI_LED, WIFI_LED_OFF);
+    } else {
+      digitalWrite(PIN_WIFI_LED, WIFI_LED_ON);
+    }
+    otaLedOn = !otaLedOn;
+    otaSwapStateMs = millis() + 50;
+  }
 }
 
 void setupOTA() {
