@@ -55,6 +55,9 @@ RobustWiegand reader(PIN_D0, PIN_D1);
 unsigned long telnetLogoutMs = 0;
 String telnetVal = "";
 
+uint32_t* allowedFobs = nullptr;
+int numFobs = 0;
+
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_RELAY, OUTPUT);
@@ -67,6 +70,12 @@ void setup() {
   digitalWrite(PIN_OPEN_LED, OPEN_LED_OFF);
 
   EEPROM.begin(EEPROM_SIZE);
+
+  if (!hasMagic()) {
+    writePassword("CHANGE_ME");
+    writeFobs();
+  }
+  readFobs();
 
   bool ok = wifiManager.autoConnect();
   if (!ok) {
@@ -105,16 +114,33 @@ void loop() {
 
   RobustWiegand::Frame frame;
   while (reader.read(frame)) {
-    uint32_t cardValue = (frame.value >> 1) & 0xFFFFFF;
+    uint32_t fob = (frame.value >> 1) & 0xFFFFFF;
     TelnetStream.printf(
       "D:Wiegand: bits=%u value=%llu fob=%u rejected=%u overflow=%s",
       frame.bits,
       frame.value,
-      cardValue,
+      fob,
       frame.rejectedEdges,
       frame.overflow ? "yes" : "no"
     );
     TelnetStream.println();
+
+    bool unlocked = false;
+    for (int i = 0; i < numFobs; i++) {
+      if (allowedFobs[i] == fob) {
+        TelnetStream.print("A:Fob ");
+        TelnetStream.print(fob);
+        TelnetStream.println(" unlocked the door");
+        openDoor(DOOR_OPEN_MS);
+        unlocked = true;
+        break;
+      }
+    }
+    if (!unlocked) {
+      TelnetStream.print("A:Fob ");
+      TelnetStream.print(fob);
+      TelnetStream.println(" was DENIED access");
+    }
   }
   TelnetStream.flush();
 
@@ -191,6 +217,31 @@ void processTelnet() {
       TelnetStream.print(unlockTime);
       TelnetStream.println("ms");
       break;
+    case 'C': // Clear fobs list
+      numFobs = 0;
+      TelnetStream.println("A:Cleared fobs");
+      break;
+    case 'F': // Add fob
+      if (allowedFobs == nullptr) {
+        allowedFobs = new uint32_t[1];
+      }
+      allowedFobs[numFobs] = args.toInt();
+      numFobs += 1;
+      TelnetStream.println("A:Added fob");
+      break;
+    case 'W': // Write fobs list
+      writeFobs();
+      readFobs();
+      TelnetStream.println("A:Fobs list persisted");
+      break;
+    case 'T': // List fobs
+      TelnetStream.print("D:Num fobs = ");
+      TelnetStream.println(numFobs);
+      for (int i = 0; i < numFobs; i++) {
+        TelnetStream.print("D:F:");
+        TelnetStream.println(allowedFobs[i]);
+      }
+      break;
     default:
       TelnetStream.println("E:Unknown command");
       break;
@@ -236,9 +287,76 @@ void sparkleOTA() {
   }
 }
 
-void writePassword(String password) {
+bool hasMagic() {
+  byte magic1 = EEPROM.read(EEPROM_PASSWORD_ADDR);
+  byte magic2 = EEPROM.read(EEPROM_PASSWORD_ADDR+1);
+  return magic1 == 0x64 && magic2 == 0x42;
+}
+
+void writeMagic() {
   EEPROM.write(EEPROM_PASSWORD_ADDR, 0x64);
   EEPROM.write(EEPROM_PASSWORD_ADDR+1, 0x42);
+  // leave commit to caller
+}
+
+void writeFobs() {
+  writeMagic();
+  byte len1 = (numFobs >> 8) & 0xFF;
+  byte len2 = numFobs & 0xFF;
+  EEPROM.write(EEPROM_FOBS_ADDR, len1);
+  EEPROM.write(EEPROM_FOBS_ADDR+1, len2);
+
+  if (allowedFobs != nullptr) {
+    for (int i = 0; i < numFobs; i++) {
+      uint32_t fob = allowedFobs[i];
+      byte fob1 = (fob >> 24) & 0xFF;
+      byte fob2 = (fob >> 16) & 0xFF;
+      byte fob3 = (fob >> 8) & 0xff;
+      byte fob4 = fob & 0xFF;
+      byte offset = i * 4;
+      EEPROM.write(EEPROM_FOBS_ADDR+2+offset, fob1);
+      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+1, fob2);
+      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+2, fob3);
+      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+3, fob4);
+    }
+  }
+
+  EEPROM.commit();
+}
+
+void readFobs() {
+  if (!hasMagic()) {
+    return;
+  }
+
+  byte len1 = EEPROM.read(EEPROM_FOBS_ADDR);
+  byte len2 = EEPROM.read(EEPROM_FOBS_ADDR+1);
+  int length = (len1 << 8) | len2;
+  if (length == 0xFFFF) {
+    // safety - sometimes the EEPROM isn't empty
+    numFobs = 0;
+    return;
+  }
+
+  numFobs = length;
+  if (allowedFobs != nullptr) {
+    delete[] allowedFobs;
+  }
+  allowedFobs = new uint32_t[numFobs];
+  for (int i = 0; i < numFobs; i++) {
+      byte offset = i * 4;
+    byte fob1 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset);
+    byte fob2 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+1);
+    byte fob3 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+2);
+    byte fob4 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+3);
+    uint32_t fob = (fob1 << 24) | (fob2 << 16) | (fob3 << 8) | fob4;
+    allowedFobs[i] = fob;
+  }
+}
+
+
+void writePassword(String password) {
+  writeMagic();
   for (byte i = 0; i < EEPROM_PASSWORD_LEN-2; i++) {
     char val = '\0';
     if (i < password.length()) {
@@ -250,23 +368,20 @@ void writePassword(String password) {
 }
 
 String readPassword() {
-  String password = "CHANGE_ME";
-  byte magic1 = EEPROM.read(EEPROM_PASSWORD_ADDR);
-  byte magic2 = EEPROM.read(EEPROM_PASSWORD_ADDR+1);
-  if (magic1 == 0x64 && magic2 == 0x42) {
-    password = "";
-    for (byte i = 0; i < EEPROM_PASSWORD_LEN-2; i++) {
-      char val = EEPROM.read(EEPROM_PASSWORD_ADDR+2+i);
-      if (val == '\0') {
-        break;
-      }
-      password += val;
-    }
-    Serial.print("Using stored password: ");
-    Serial.println(password);
-  } else {
-    Serial.println("Using default password - this is not recommended");
+  if (!hasMagic()) {
+    return "CHANGE_ME";
   }
+
+  String password = "";
+  for (byte i = 0; i < EEPROM_PASSWORD_LEN-2; i++) {
+    char val = EEPROM.read(EEPROM_PASSWORD_ADDR+2+i);
+    if (val == '\0') {
+      break;
+    }
+    password += val;
+  }
+  Serial.print("Using stored password: ");
+  Serial.println(password);
   return password;
 }
 

@@ -31,3 +31,19 @@ Command: Open door
 (requires being logged in)
 `O:` (uses default opening time in program)
 `O:<time seconds>` (eg: `O:5`)
+
+Command: Clear in-memory fobs list
+(requires being logged in)
+`C:`
+
+Command: Add fob to in-memory list
+(requires being logged in)
+`F:<fob>` (eg: `F:131454`)
+
+Command: Write in-memory fobs list to EEPROM
+(requires being logged in)
+`W:`
+
+Command: Get in-memory fobs list
+(requires being logged in)
+`T:`

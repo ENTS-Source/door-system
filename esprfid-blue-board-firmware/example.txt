@@ -1,0 +1,15 @@
+#: Log in
+L:test1234
+
+#: Clear whatever's there
+C:
+
+#: Add some fobs
+F:8774191
+F:13193390
+
+#: Remember those fobs
+W:
+
+#: Verify fobs are listed in the EEPROM
+T:
