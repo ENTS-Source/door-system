@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <EEPROM.h>
 #include <WiFiManager.h>  // https://github.com/tzapu/WiFiManager
 #include <ArduinoOTA.h>   // https://github.com/jandrassy/ArduinoOTA
 #include <TelnetStream.h> // https://github.com/JAndrassy/TelnetStream
@@ -35,24 +36,37 @@
 #define WIFI_LED_ON LOW
 #define WIFI_LED_OFF HIGH
 
+// --- Telnet configuration
+#define TELNET_LOGIN_TIME_MS 60000 // 1 minute
+
 // ==== /Configuration ====
+
+#define EEPROM_SIZE 2048
+#define EEPROM_MAGIC1_ADDR 0
+#define EEPROM_MAGIC2_ADDR 1
+#define EEPROM_PASSWORD_ADDR 2
+#define EEPROM_PASSWORD_LEN 32
+#define EEPROM_FOBS_ADDR EEPROM_PASSWORD_ADDR+EEPROM_PASSWORD_LEN
 
 WiFiManager wifiManager;
 unsigned long closeDoorMs = 0;
 RobustWiegand reader(PIN_D0, PIN_D1);
+
+unsigned long telnetLogoutMs = 0;
+String telnetVal = "";
 
 void setup() {
   Serial.begin(115200);
   pinMode(PIN_RELAY, OUTPUT);
   pinMode(PIN_OPEN_BTN, INPUT);
   pinMode(PIN_WIFI_LED, OUTPUT);
-  // pinMode(PIN_D0, INPUT_PULLUP);
-  // pinMode(PIN_D1, INPUT_PULLUP);
   pinMode(PIN_OPEN_LED, OUTPUT);
 
   digitalWrite(PIN_RELAY, RELAY_CLOSE);
   digitalWrite(PIN_WIFI_LED, WIFI_LED_OFF);
   digitalWrite(PIN_OPEN_LED, OPEN_LED_OFF);
+
+  EEPROM.begin(EEPROM_SIZE);
 
   bool ok = wifiManager.autoConnect();
   if (!ok) {
@@ -93,7 +107,7 @@ void loop() {
   while (reader.read(frame)) {
     uint32_t cardValue = (frame.value >> 1) & 0xFFFFFF;
     TelnetStream.printf(
-      "Wiegand: bits=%u value=%llu fob=%lu rejected=%u overflow=%s",
+      "D:Wiegand: bits=%u value=%llu fob=%u rejected=%u overflow=%s",
       frame.bits,
       frame.value,
       cardValue,
@@ -104,11 +118,81 @@ void loop() {
   }
   TelnetStream.flush();
 
-  switch (TelnetStream.read()) {
-    case 'R':
+  processTelnet();
+}
+
+void processTelnet() {
+  if (!TelnetStream.available()) {
+    return;
+  }
+
+  char val = TelnetStream.read();
+  bool loggedIn = millis() < telnetLogoutMs;
+  if (val != '\r' && val != '\n' && val != '\0') {
+    telnetVal += val;
+    return;
+  }
+  String command = telnetVal;
+  telnetVal = "";
+  if (command.length() == 0) {
+    return; // entirely empty, ignore
+  }
+  if (command.length() < 2) {
+    TelnetStream.println("E:Command too short");
+    return;
+  }
+  if (command[1] != ':') {
+    TelnetStream.println("E:Malformed command");
+    return;
+  }
+  String args = command.substring(2);
+  switch(command[0]) {
+    case 'D': // Debug
+    case 'A': // Audit
+    case 'E': // Error
+    case '#': // Comment
+      return; // ignore
+  }
+  if (!loggedIn && command[0] != 'L') {
+    TelnetStream.println("E:Not logged in");
+    return;
+  } else if (!loggedIn) { // Log in
+    String password = readPassword();
+    if (password == args) {
+      telnetLogoutMs = millis() + TELNET_LOGIN_TIME_MS;
+      TelnetStream.println("D:Logged in");
+    } else {
+      TelnetStream.println("E:Wrong password");
+    }
+    return;
+  }
+
+  unsigned long unlockTime = DOOR_OPEN_MS;
+  switch(command[0]) {
+    case 'L': // Log out (log in handled above)
+      telnetLogoutMs = 0;
+      TelnetStream.println("D:Logged out");
+      break;
+    case 'R': // Reset
       TelnetStream.stop();
       delay(100);
       ESP.reset();
+      break;
+    case 'P': // Change password
+      writePassword(args);
+      TelnetStream.println("D:Password changed");
+      break;
+    case 'O': // Open door
+      if (args.length() > 0) {
+        unlockTime = args.toInt();
+      }
+      openDoor(unlockTime);
+      TelnetStream.print("A:Opening door for ");
+      TelnetStream.print(unlockTime);
+      TelnetStream.println("ms");
+      break;
+    default:
+      TelnetStream.println("E:Unknown command");
       break;
   }
 }
@@ -122,14 +206,14 @@ void tryOpenOrClose() {
     return; // door already open
   }
   if (digitalRead(PIN_OPEN_BTN) == BTN_PUSHED) {
-    TelnetStream.println("Button push open");
+    TelnetStream.println("A:Button push open");
     TelnetStream.flush();
-    openDoor();
+    openDoor(DOOR_OPEN_MS);
   }
 }
 
-void openDoor() {
-  closeDoorMs = millis() + DOOR_OPEN_MS;
+void openDoor(unsigned long forTime) {
+  closeDoorMs = millis() + forTime;
   digitalWrite(PIN_RELAY, RELAY_OPEN);
   digitalWrite(PIN_OPEN_LED, OPEN_LED_ON);
 }
@@ -152,8 +236,43 @@ void sparkleOTA() {
   }
 }
 
+void writePassword(String password) {
+  EEPROM.write(EEPROM_PASSWORD_ADDR, 0x64);
+  EEPROM.write(EEPROM_PASSWORD_ADDR+1, 0x42);
+  for (byte i = 0; i < EEPROM_PASSWORD_LEN-2; i++) {
+    char val = '\0';
+    if (i < password.length()) {
+      val = password[i];
+    }
+    EEPROM.write(EEPROM_PASSWORD_ADDR+2+i, val);
+  }
+  EEPROM.commit();
+}
+
+String readPassword() {
+  String password = "CHANGE_ME";
+  byte magic1 = EEPROM.read(EEPROM_PASSWORD_ADDR);
+  byte magic2 = EEPROM.read(EEPROM_PASSWORD_ADDR+1);
+  if (magic1 == 0x64 && magic2 == 0x42) {
+    password = "";
+    for (byte i = 0; i < EEPROM_PASSWORD_LEN-2; i++) {
+      char val = EEPROM.read(EEPROM_PASSWORD_ADDR+2+i);
+      if (val == '\0') {
+        break;
+      }
+      password += val;
+    }
+    Serial.print("Using stored password: ");
+    Serial.println(password);
+  } else {
+    Serial.println("Using default password - this is not recommended");
+  }
+  return password;
+}
+
 void setupOTA() {
-  // ArduinoOTA.setPassword("SafetyFirst!");
+  String password = readPassword();
+  ArduinoOTA.setPassword(password.c_str());
   ArduinoOTA.onStart([]() {
     doingUpdate = true;
     Serial.println("OTA update started");

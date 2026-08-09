@@ -1,0 +1,33 @@
+Structure: `C:String`. `C` is the command, `:` for visual separation, and `String` is command-dependent.
+
+Command: Comment (do nothing command)
+`#:<comment>` (eg: `#:Updated fob numbers`)
+
+Command: Error message
+`E:<message>` (eg: `E:It broke`)
+
+Command: Audit message
+`A:<message>` (eg: `A:A thing happened`)
+
+Command: Debug message
+`D:<message>` (eg: `D:Received value`)
+
+Command: Login
+`L:<password>` (eg: `L:hunter2`)
+
+Command: Logout
+(requires being logged in - may produce error otherwise)
+`L:`
+
+Command: Reset/restart ESP
+(requires being logged in)
+`R:`
+
+Command: Change password
+(requires being logged in)
+`P:<new password>` (truncated to 32 characters; eg: `P:hunter2`)
+
+Command: Open door
+(requires being logged in)
+`O:` (uses default opening time in program)
+`O:<time seconds>` (eg: `O:5`)
