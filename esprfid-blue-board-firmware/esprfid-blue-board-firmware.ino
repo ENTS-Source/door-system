@@ -27,7 +27,8 @@
 #define OPEN_LED_OFF HIGH
 
 // --- Button configuration
-#define BTN_PUSHED LOW
+#define BTN_ENABLE false
+#define BTN_PUSHED HIGH
 
 // --- Door configuration
 #define DOOR_OPEN_MS 3000
@@ -242,6 +243,10 @@ void processTelnet() {
         TelnetStream.println(allowedFobs[i]);
       }
       break;
+    case 'I': // Reset wifi
+      wifiManager.resetSettings();
+      TelnetStream.println("A:Wifi reset");
+      break;
     default:
       TelnetStream.println("E:Unknown command");
       break;
@@ -256,7 +261,7 @@ void tryOpenOrClose() {
   if (millis() < closeDoorMs) {
     return; // door already open
   }
-  if (digitalRead(PIN_OPEN_BTN) == BTN_PUSHED) {
+  if (BTN_ENABLE && digitalRead(PIN_OPEN_BTN) == BTN_PUSHED) {
     TelnetStream.println("A:Button push open");
     TelnetStream.flush();
     openDoor(DOOR_OPEN_MS);
