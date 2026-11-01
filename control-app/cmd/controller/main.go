@@ -25,8 +25,6 @@ type config struct {
 	AmpBufferDays   int    `envconfig:"amp_buffer_days" default:"3"`
 	AmpResyncOnHour int    `envconfig:"amp_resync_on_hour" default:"4"`
 
-	DbPath string `envconfig:"db_path" default:"./controller.db"`
-
 	DoorIp       string `envconfig:"door_ip"`
 	DoorPassword string `envconfig:"door_password"`
 }
