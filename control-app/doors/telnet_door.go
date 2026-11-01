@@ -128,8 +128,20 @@ func (d *TelnetDoor) WriteTransaction(txn FobTransaction) error {
 		if err := d.protoLogin(); err != nil {
 			return fmt.Errorf("failed login: %w", err)
 		}
-		if _, err := d.conn.Write([]byte(txn2.buf)); err != nil {
-			return fmt.Errorf("failed writing to door: %w", err)
+		// Buffer into 16 byte chunks to avoid over powering the ESP
+		for i := 0; i < len(txn2.buf); i += 16 {
+			end := i + 16
+			if end > len(txn2.buf) {
+				end = len(txn2.buf)
+			}
+
+			block := make([]byte, 16)
+			copy(block[:], txn2.buf[i:end])
+			if _, err := d.conn.Write(block); err != nil {
+				return fmt.Errorf("failed writing to door: %w", err)
+			}
+			// also sleep for a moment to give the ESP processing time
+			<-time.After(10 * time.Millisecond)
 		}
 		if err := d.protoWriteFobs(); err != nil {
 			return fmt.Errorf("failed committing fobs: %w", err)
