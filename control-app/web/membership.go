@@ -98,7 +98,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 		log.Println("Error asking for category information", err)
 		return
 	}
-	//log.Println("Product Ids for Category", ProductCategoryId, productIds)
+	log.Println("Product Ids for Category", ProductCategoryId, productIds)
 
 	//log.Println(user.Id, "access is", user.FobAccess)
 	switch user.FobAccess {
