@@ -55,6 +55,9 @@ func (s *impl) Start() error {
 	http.HandleFunc("/v1/amember", s.doWebhook)
 	http.HandleFunc("/v1/resync", s.requireAuth(s.doResync))
 	http.HandleFunc("/v1/doors/open", s.requireAuth(s.doOpenAllDoors))
+	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
 	s.srv = &http.Server{Addr: s.config.BindAddress}
 	return s.srv.ListenAndServe()
 }
