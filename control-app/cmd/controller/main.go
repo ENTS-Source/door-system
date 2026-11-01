@@ -4,9 +4,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/ents-source/door-system/doors"
+	"github.com/ents-source/door-system/web"
 	"github.com/kelseyhightower/envconfig"
 )
 
@@ -15,8 +18,8 @@ type config struct {
 
 	ApiSharedKey string `envconfig:"api_shared_key"`
 
-	AmpApiKey       string `envconfig:"amp_api_key"`
-	AmpApiKeyFile   string `envconfig:"amp_api_key_file"`
+	AmpApiKey string `envconfig:"amp_api_key"`
+	//AmpApiKeyFile   string `envconfig:"amp_api_key_file"` // TODO: Restore
 	AmpApiUrl       string `envconfig:"amp_api_url"`
 	AmpCategoryId   int    `envconfig:"amp_category_id"`
 	AmpBufferDays   int    `envconfig:"amp_buffer_days" default:"3"`
@@ -24,7 +27,8 @@ type config struct {
 
 	DbPath string `envconfig:"db_path" default:"./controller.db"`
 
-	Doors map[string]string `envconfig:"doors"` // IP to zone name
+	DoorIp       string `envconfig:"door_ip"`
+	DoorPassword string `envconfig:"door_password"`
 }
 
 func main() {
@@ -34,8 +38,36 @@ func main() {
 		log.Fatal(err)
 	}
 
-	timer := scheduleResync(c)
+	door, err := doors.NewTelnetDoor(c.DoorIp, c.DoorPassword)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer door.Close()
 
+	zone, err := doors.NewSingleDoorZone(door)
+	if err != nil {
+		log.Fatal(err)
+	}
+	controller, err := doors.NewSingleDoorController(zone)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	webApi := web.NewServer(web.Config{
+		BindAddress:          c.HttpBind,
+		SelfApiKey:           c.ApiSharedKey,
+		AccessBufferDays:     c.AmpBufferDays,
+		AmpApiKey:            c.AmpApiKey,
+		AmpApiUrl:            c.AmpApiUrl,
+		AmpProductCategoryId: c.AmpCategoryId,
+	}, controller)
+	if err = webApi.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	timer := scheduleResync(c, webApi)
+
+	wg := &sync.WaitGroup{}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -45,22 +77,11 @@ func main() {
 		log.Println("Stopping timer...")
 		timer.Stop()
 
-		log.Println("Stopping doors...")
-		doors.Disconnect()
-
-		log.Println("Stopping api...")
-		api.Stop()
-
-		log.Println("Stopping matrix...")
-		matrix.Stop()
-
-		log.Println("Stopping database...")
-		db.Stop()
-
-		log.Println("Cleaning up...")
-		_ = os.RemoveAll(webPath)
+		log.Println("Stopping web...")
+		webApi.Stop()
 
 		log.Println("Done stopping")
+		wg.Done()
 	}()
 
 	wg.Add(1)
@@ -69,7 +90,7 @@ func main() {
 	log.Println("Goodbye!")
 }
 
-func scheduleResync(c config) *time.Timer {
+func scheduleResync(c config, webApi web.Server) *time.Timer {
 	now := time.Now()
 	target := time.Date(now.Year(), now.Month(), now.Day(), c.AmpResyncOnHour, 0, 0, 0, time.Local)
 	if target.Before(now) {
@@ -82,8 +103,8 @@ func scheduleResync(c config) *time.Timer {
 			select {
 			case <-timer.C:
 				log.Println("Resyncing all users on timer")
-				amember.ResyncAllUsers()
-				scheduleResync(c)
+				webApi.ResyncAllUsers()
+				scheduleResync(c, webApi)
 			}
 		}
 	}()

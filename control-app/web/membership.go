@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ents-source/door-system/doors"
 	"github.com/ents-source/go-amember-api/amember"
 )
 
@@ -16,7 +17,17 @@ var ProductCategoryId int
 var AccessBufferDays int
 
 func (s *impl) doResync(w http.ResponseWriter, r *http.Request) {
-	s.resyncAllUsers()
+	s.ResyncAllUsers()
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *impl) doOpenAllDoors(w http.ResponseWriter, r *http.Request) {
+	err := s.doors.GetGlobalZone().OpenDoors()
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -65,10 +76,20 @@ func (s *impl) resyncUser(id int) {
 		return
 	}
 
-	s.updateUserFromRecord(user, false)
+	txn, err := s.doors.GetGlobalZone().NewTransaction()
+	if err != nil {
+		log.Println("[DOOR UPDATE]", err)
+		return
+	}
+
+	s.updateUserFromRecord(user, false, txn)
+	if err = s.doors.GetGlobalZone().WriteTransaction(txn); err != nil {
+		log.Println("[DOOR UPDATE]", err)
+		return
+	}
 }
 
-func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool) {
+func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn doors.FobTransaction) {
 	if user.Fob == "" || user.Fob == "N/A" {
 		return // no possible change
 	}
@@ -80,9 +101,9 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool) {
 
 	switch user.FobAccess {
 	case "enabled":
-		err = s.doors.GetGlobalZone().ProgramFob(user.Fob, true)
+		err = txn.ProgramFob(user.Fob, true)
 	case "disabled":
-		err = s.doors.GetGlobalZone().ProgramFob(user.Fob, false)
+		err = txn.ProgramFob(user.Fob, false)
 	case "subscription":
 		fallthrough
 	case "":
@@ -114,13 +135,13 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool) {
 			endDate = endDate.Add(time.Duration(AccessBufferDays) * 24 * time.Hour)
 
 			if startDate.Before(time.Now()) && endDate.After(time.Now()) {
-				err = s.doors.GetGlobalZone().ProgramFob(user.Fob, true)
+				err = txn.ProgramFob(user.Fob, true)
 				didUpdate = true
 				break
 			}
 		}
 		if !didUpdate && !skipIfDisabled {
-			err = s.doors.GetGlobalZone().ProgramFob(user.Fob, false) // no useful access records
+			err = txn.ProgramFob(user.Fob, false) // no useful access records
 		}
 	default:
 		log.Println("Unknown FobAccess value", user.FobAccess)
@@ -134,7 +155,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool) {
 
 var syncMutex = new(sync.Mutex)
 
-func (s *impl) resyncAllUsers() {
+func (s *impl) ResyncAllUsers() {
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
 
@@ -144,11 +165,20 @@ func (s *impl) resyncAllUsers() {
 		return
 	}
 
-	err = s.doors.GetGlobalZone().WipeFobs()
+	txn, err := s.doors.GetGlobalZone().NewTransaction()
+	if err != nil {
+		log.Println("Error creating new door transaction: ", err)
+		return
+	}
+	err = txn.WipeFobs()
 	if err != nil {
 		log.Println("Error wiping fobs (continuing anyway)", err)
 	}
 	for _, u := range users {
-		s.updateUserFromRecord(u, true)
+		s.updateUserFromRecord(u, true, txn)
+	}
+	if err = s.doors.GetGlobalZone().WriteTransaction(txn); err != nil {
+		log.Println("Error writing door transaction: ", err)
+		return
 	}
 }

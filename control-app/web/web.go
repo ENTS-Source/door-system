@@ -22,6 +22,7 @@ type Config struct {
 type Server interface {
 	Start() error
 	Stop() error
+	ResyncAllUsers()
 }
 
 type impl struct {
@@ -53,7 +54,7 @@ func (s *impl) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 func (s *impl) Start() error {
 	http.HandleFunc("/v1/amember", s.doWebhook)
 	http.HandleFunc("/v1/resync", s.requireAuth(s.doResync))
-	http.HandleFunc("/v1/doors/open", s.requireAuth(doOpenAllDoors))
+	http.HandleFunc("/v1/doors/open", s.requireAuth(s.doOpenAllDoors))
 	s.srv = &http.Server{Addr: s.config.BindAddress}
 	return s.srv.ListenAndServe()
 }
