@@ -36,12 +36,12 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Println("Setting up door...")
 	door, err := doors.NewTelnetDoor(c.DoorIp, c.DoorPassword)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer door.Close()
-
 	zone, err := doors.NewSingleDoorZone(door)
 	if err != nil {
 		log.Fatal(err)
@@ -51,6 +51,7 @@ func main() {
 		log.Fatal(err)
 	}
 
+	log.Println("Setting up web api...")
 	webApi := web.NewServer(web.Config{
 		BindAddress:          c.HttpBind,
 		SelfApiKey:           c.ApiSharedKey,
@@ -59,12 +60,17 @@ func main() {
 		AmpApiUrl:            c.AmpApiUrl,
 		AmpProductCategoryId: c.AmpCategoryId,
 	}, controller)
-	if err = webApi.Start(); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		log.Println("Starting web api...")
+		if err = webApi.Start(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 
+	log.Println("Starting resync timer...")
 	timer := scheduleResync(c, webApi)
 
+	log.Println("Ready! Waiting for exit")
 	wg := &sync.WaitGroup{}
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
