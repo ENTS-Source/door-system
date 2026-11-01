@@ -15,6 +15,8 @@ RUN GOBIN=$PWD/bin go install -v ./cmd/...
 # Final runtime stage.
 FROM alpine
 
+RUN apk add --no-cache curl
+
 ENV DC_HTTP_BIND=0.0.0.0:8080
 
 COPY --from=builder /opt/bin/controller /usr/local/bin/
