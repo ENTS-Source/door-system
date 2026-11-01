@@ -134,7 +134,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 			if err != nil {
 				log.Println("Error parsing end date", row.EndDate, err)
 			}
-			endDate = endDate.Add(time.Duration(AccessBufferDays) * 24 * time.Hour)
+			endDate = endDate.Add(time.Duration(AccessBufferDays+1) * 24 * time.Hour)
 
 			log.Println("Access range", row.ProductId, startDate, endDate, startDate.Before(time.Now()), endDate.After(time.Now()))
 			if startDate.Before(time.Now()) && endDate.After(time.Now()) {
