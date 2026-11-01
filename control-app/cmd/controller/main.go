@@ -29,6 +29,12 @@ type config struct {
 	DoorPassword string `envconfig:"door_password"`
 }
 
+func init() {
+	log.SetOutput(os.Stdout)
+	log.SetPrefix("[door-system] ")
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+}
+
 func main() {
 	var c config
 	err := envconfig.Process("dc", &c)

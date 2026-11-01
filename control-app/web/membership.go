@@ -158,6 +158,7 @@ var syncMutex = new(sync.Mutex)
 func (s *impl) ResyncAllUsers() {
 	syncMutex.Lock()
 	defer syncMutex.Unlock()
+	log.Println("Resyncing all users")
 
 	users, err := s.ampApi.GetAllUsers()
 	if err != nil {
