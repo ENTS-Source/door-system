@@ -113,7 +113,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 		for _, row := range user.Nested.Access {
 			usefulRow := false
 			for _, pid := range productIds {
-				if row.ProductId == strconv.Itoa(pid) {
+				if row.ProductId == pid {
 					usefulRow = true
 					break
 				}
