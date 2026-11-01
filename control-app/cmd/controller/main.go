@@ -42,6 +42,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	web.ProductCategoryId = c.AmpCategoryId
+
 	log.Println("Setting up door...")
 	door, err := doors.NewTelnetDoor(c.DoorIp, c.DoorPassword)
 	if err != nil {
