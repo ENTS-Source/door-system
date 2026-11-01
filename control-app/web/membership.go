@@ -136,7 +136,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 			}
 			endDate = endDate.Add(time.Duration(AccessBufferDays+1) * 24 * time.Hour)
 
-			log.Println("Access range", row.ProductId, startDate, endDate, startDate.Before(time.Now()), endDate.After(time.Now()))
+			//log.Println("Access range", row.ProductId, startDate, endDate, startDate.Before(time.Now()), endDate.After(time.Now()))
 			if startDate.Before(time.Now()) && endDate.After(time.Now()) {
 				err = txn.ProgramFob(user.Fob, true)
 				didUpdate = true
