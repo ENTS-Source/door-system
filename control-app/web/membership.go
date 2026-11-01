@@ -98,6 +98,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 		log.Println("Error asking for category information", err)
 		return
 	}
+	log.Println("Product Ids for Category", productIds)
 
 	log.Println(user.Id, "access is", user.FobAccess)
 	switch user.FobAccess {
@@ -135,6 +136,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 			}
 			endDate = endDate.Add(time.Duration(AccessBufferDays) * 24 * time.Hour)
 
+			log.Println("Access range", row.ProductId, startDate, endDate)
 			if startDate.Before(time.Now()) && endDate.After(time.Now()) {
 				err = txn.ProgramFob(user.Fob, true)
 				didUpdate = true
