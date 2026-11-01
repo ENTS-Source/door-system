@@ -99,6 +99,7 @@ func (s *impl) updateUserFromRecord(user amember.User, skipIfDisabled bool, txn 
 		return
 	}
 
+	log.Println(user.Id, "access is", user.FobAccess)
 	switch user.FobAccess {
 	case "enabled":
 		err = txn.ProgramFob(user.Fob, true)
