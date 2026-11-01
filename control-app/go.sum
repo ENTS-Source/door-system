@@ -1,4 +1,4 @@
-github.com/ents-source/go-amember-api v0.0.0-20261101021155-d4f1536ea418 h1:1UaOyKdd5EjYnl82HV2EZKKipgk566symEiZgFSVqBc=
-github.com/ents-source/go-amember-api v0.0.0-20261101021155-d4f1536ea418/go.mod h1:lySf7yqMS6/u6kxxy61ItqHbHyJhLiytJhxQLm8ZrR0=
+github.com/ents-source/go-amember-api v0.0.0-20261101021440-e3a228232405 h1:Z5Al6u7Zmk6edhxdb2PlxltmBYg9YBprXKEJdLqM0w4=
+github.com/ents-source/go-amember-api v0.0.0-20261101021440-e3a228232405/go.mod h1:lySf7yqMS6/u6kxxy61ItqHbHyJhLiytJhxQLm8ZrR0=
 github.com/kelseyhightower/envconfig v1.4.0 h1:Im6hONhd3pLkfDFsbRgu68RDNkGF1r3dvMUtDTo2cv8=
 github.com/kelseyhightower/envconfig v1.4.0/go.mod h1:cccZRl6mQpaq41TPp5QxidR+Sa3axMbJDNb//FQX6Gg=
