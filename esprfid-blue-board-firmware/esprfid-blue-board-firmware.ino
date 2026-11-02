@@ -48,6 +48,7 @@
 #define EEPROM_PASSWORD_ADDR 2
 #define EEPROM_PASSWORD_LEN 32
 #define EEPROM_FOBS_ADDR EEPROM_PASSWORD_ADDR+EEPROM_PASSWORD_LEN
+#define MAX_FOBS 500
 
 WiFiManager wifiManager;
 unsigned long closeDoorMs = 0;
@@ -56,7 +57,7 @@ RobustWiegand reader(PIN_D0, PIN_D1);
 unsigned long telnetLogoutMs = 0;
 String telnetVal = "";
 
-uint32_t* allowedFobs = nullptr;
+uint32_t allowedFobs[MAX_FOBS];
 int numFobs = 0;
 
 void setup() {
@@ -223,12 +224,13 @@ void processTelnet() {
       TelnetStream.println("A:Cleared fobs");
       break;
     case 'F': // Add fob
-      if (allowedFobs == nullptr) {
-        allowedFobs = new uint32_t[1];
+      if (numFobs < MAX_FOBS) {
+        allowedFobs[numFobs] = args.toInt();
+        numFobs += 1;
+        TelnetStream.println("A:Added fob");
+      } else {
+        TelnetStream.println("E:Max fobs reached");
       }
-      allowedFobs[numFobs] = args.toInt();
-      numFobs += 1;
-      TelnetStream.println("A:Added fob");
       break;
     case 'W': // Write fobs list
       writeFobs();
@@ -293,19 +295,17 @@ void writeFobs() {
   EEPROM.write(EEPROM_FOBS_ADDR, len1);
   EEPROM.write(EEPROM_FOBS_ADDR+1, len2);
 
-  if (allowedFobs != nullptr) {
-    for (int i = 0; i < numFobs; i++) {
-      uint32_t fob = allowedFobs[i];
-      byte fob1 = (fob >> 24) & 0xFF;
-      byte fob2 = (fob >> 16) & 0xFF;
-      byte fob3 = (fob >> 8) & 0xff;
-      byte fob4 = fob & 0xFF;
-      byte offset = i * 4;
-      EEPROM.write(EEPROM_FOBS_ADDR+2+offset, fob1);
-      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+1, fob2);
-      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+2, fob3);
-      EEPROM.write(EEPROM_FOBS_ADDR+2+offset+3, fob4);
-    }
+  for (int i = 0; i < numFobs; i++) {
+    uint32_t fob = allowedFobs[i];
+    byte fob1 = (fob >> 24) & 0xFF;
+    byte fob2 = (fob >> 16) & 0xFF;
+    byte fob3 = (fob >> 8) & 0xff;
+    byte fob4 = fob & 0xFF;
+    int offset = i * 4;
+    EEPROM.write(EEPROM_FOBS_ADDR+2+offset, fob1);
+    EEPROM.write(EEPROM_FOBS_ADDR+2+offset+1, fob2);
+    EEPROM.write(EEPROM_FOBS_ADDR+2+offset+2, fob3);
+    EEPROM.write(EEPROM_FOBS_ADDR+2+offset+3, fob4);
   }
 
   EEPROM.commit();
@@ -319,24 +319,20 @@ void readFobs() {
   byte len1 = EEPROM.read(EEPROM_FOBS_ADDR);
   byte len2 = EEPROM.read(EEPROM_FOBS_ADDR+1);
   int length = (len1 << 8) | len2;
-  if (length == 0xFFFF) {
+  if (length == 0xFFFF || length > MAX_FOBS || length < 0) {
     // safety - sometimes the EEPROM isn't empty
     numFobs = 0;
     return;
   }
 
   numFobs = length;
-  if (allowedFobs != nullptr) {
-    delete[] allowedFobs;
-  }
-  allowedFobs = new uint32_t[numFobs];
   for (int i = 0; i < numFobs; i++) {
-      byte offset = i * 4;
+    int offset = i * 4;
     byte fob1 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset);
     byte fob2 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+1);
     byte fob3 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+2);
     byte fob4 = EEPROM.read(EEPROM_FOBS_ADDR+2+offset+3);
-    uint32_t fob = (fob1 << 24) | (fob2 << 16) | (fob3 << 8) | fob4;
+    uint32_t fob = ((uint32_t)fob1 << 24) | ((uint32_t)fob2 << 16) | ((uint32_t)fob3 << 8) | (uint32_t)fob4;
     allowedFobs[i] = fob;
   }
 }
